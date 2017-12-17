@@ -1,0 +1,262 @@
+---
+title: "Practical Machine Learning: RF"
+author: "[Heber Trujillo](https://www.linkedin.com/in/heber-trujillo/)"
+date: "December 16, 2017"
+output: 
+  html_document:
+    number_sections: false
+    toc: true
+    toc_depth: 2
+    toc_float: true
+---
+
+#Introduction
+
+For this project We're going to use [data](http://groupware.les.inf.puc-rio.br/har)  from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+The **goal** is to predict the manner (A, B, C, D or E) in which they did the exercise. This is the *classe* variable.
+
+The [training](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and [testing](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) sets are available if you're interested in reproducing this analysis.
+
+#Exploratory Data Analysis
+
+##Set-Up
+```{r, message=FALSE,include=FALSE}
+setwd("C:/DISCO D/Bienvenu/Voitures/Individuel/PT/Academic/Coursera/Machine Learning/Project")
+```
+
+```{r, message=FALSE,warning=FALSE}
+library(data.table)
+library(dplyr)
+library(caret)
+library(highcharter)
+library(gbm)
+library(plotly)
+library(randomForest)
+
+DT_all<-fread("pml-training.csv",header = TRUE,sep=",")
+validation<-fread("pml-testing.csv",header = TRUE,sep=",")
+
+set.seed(27)
+idxTrain<- createDataPartition(DT_all$classe, p=.75, list=FALSE)
+training<- DT_all[idxTrain, ]
+testing <- DT_all[-idxTrain, ]
+
+```
+
+
+##Measurements: belt
+
+Let's start with the belt's measurements: 
+```{r,warning=FALSE}
+#Train 
+belt_vars<-(training%>%select(grep("belt", names(training), value = TRUE)))
+belt_vars<-belt_vars %>% select(which(sapply(.,function (x){sum(is.na(as.numeric(x)))<1000})))
+
+#Test 
+belt_vars_t<-(testing%>%select(names(belt_vars)))
+#Validation
+belt_vars_v<-(validation%>%select(names(belt_vars)))
+
+#PCA
+preProc_belt<-preProcess(belt_vars,method = "pca",thresh=.8)
+
+#Train
+belt_pca<-predict(preProc_belt,belt_vars)
+#Test
+belt_pca_t<-predict(preProc_belt,belt_vars_t)
+#Validation
+belt_pca_v<-predict(preProc_belt,belt_vars_v)
+
+
+belt_pca<-cbind(belt_pca,training$classe)
+belt_pca_t<-cbind(belt_pca_t,testing$classe)
+
+names(belt_pca)<-c("PC1_BELT","PC2_BELT","PC3_BELT","Classe")
+names(belt_pca_t)<-c("PC1_BELT","PC2_BELT","PC3_BELT","Classe")
+names(belt_pca_v)<-c("PC1_BELT","PC2_BELT","PC3_BELT")
+
+belt_pca$Classe<-as.factor(belt_pca$Classe)
+belt_pca_t$Classe<-as.factor(belt_pca_t$Classe)
+
+p <- plot_ly(belt_pca, x = ~PC1_BELT, y = ~PC2_BELT, z = ~PC2_BELT, color = ~Classe, colors = c('#32CD32', '#9BCD9B','#C1FFC1','#C1CDC1','#838B83')) %>%
+  add_markers() %>%
+  layout(scene = list(xaxis = list(title = 'PC 1'),
+                     yaxis = list(title = 'PC 2'),
+                     zaxis = list(title = 'PC 3')))
+
+p
+```
+There are thirteen variables related to belt's measurements, however, if We want to avoid overfitting it isn´t a good idea to take them all into consideration thus, we've performed PCA and then selected the principal components needed to capture 80% of the variance.
+If you take a moment to play around with the 3d plot, then you'll find that there are some clusters.
+
+
+##Measurements: forearm
+
+```{r,warning=FALSE}
+#Train
+fore_vars<-(training%>%select(grep("forearm", names(training), value = TRUE)))
+fore_vars<-fore_vars %>% select(which(sapply(.,function (x){sum(is.na(as.numeric(x)))<1000})))
+#Test
+fore_vars_t<-(testing%>%select(names(fore_vars)))
+#Validation
+fore_vars_v<-(validation%>%select(names(fore_vars)))
+
+#PCA
+preProc_fore<-preProcess(fore_vars,method = "pca",thresh=.8)
+
+#Train
+fore_pca<-predict(preProc_fore,fore_vars)
+#Test
+fore_pca_t<-predict(preProc_fore,fore_vars_t)
+#Validation
+fore_pca_v<-predict(preProc_fore,fore_vars_v)
+
+
+names(fore_pca)<-c("PC1_FORE","PC2_FORE","PC3_FORE","PC4_FORE","PC5_FORE","PC6_FORE")
+names(fore_pca_t)<-c("PC1_FORE","PC2_FORE","PC3_FORE","PC4_FORE","PC5_FORE","PC6_FORE")
+names(fore_pca_v)<-c("PC1_FORE","PC2_FORE","PC3_FORE","PC4_FORE","PC5_FORE","PC6_FORE")
+
+
+```
+
+We have done the same procedure as belts measurements, although for forearm we got six principal components to explain the 80% of the variance. Since We have six variables it's going to be quite difficult to visualize their impact at the same time on our target variable.
+
+
+##Measurements: arm
+
+```{r,warning=FALSE}
+#Train
+arm_vars<-(training%>%select(grep("_arm", names(training), value = TRUE)))
+arm_vars<-arm_vars %>% select(which(sapply(.,function (x){sum(is.na(as.numeric(x)))<1000})))
+#Test
+arm_vars_t<-(testing%>%select(names(arm_vars)))
+#Validation
+arm_vars_v<-(validation%>%select(names(arm_vars)))
+
+#PCA
+preProc_arm<-preProcess(arm_vars,method = "pca",thresh=.8)
+
+#Train
+arm_pca<-predict(preProc_arm,arm_vars)
+#Test
+arm_pca_t<-predict(preProc_arm,arm_vars_t)
+#Validation
+arm_pca_v<-predict(preProc_arm,arm_vars_v)
+
+names(arm_pca)<-c("PC1_ARM","PC2_ARM","PC3_ARM","PC4_ARM","PC5_ARM")
+names(arm_pca_t)<-c("PC1_ARM","PC2_ARM","PC3_ARM","PC4_ARM","PC5_ARM")
+names(arm_pca_v)<-c("PC1_ARM","PC2_ARM","PC3_ARM","PC4_ARM","PC5_ARM")
+```
+
+##Measurements: dumbell
+
+```{r,warning=FALSE}
+#train
+dumb_vars<-(training%>%select(grep("dumbbell", names(training), value = TRUE)))
+dumb_vars<-dumb_vars %>% select(which(sapply(.,function (x){sum(is.na(as.numeric(x)))<1000})))
+#Test
+dumb_vars_t<-(testing%>%select(names(dumb_vars)))
+#Validation
+dumb_vars_v<-(validation%>%select(names(dumb_vars)))
+
+#PCA
+preProc_dumb<-preProcess(dumb_vars,method = "pca",thresh=.8)
+
+#Train
+dumb_pca<-predict(preProc_dumb,dumb_vars)
+#Test
+dumb_pca_t<-predict(preProc_dumb,dumb_vars_t)
+#Validation
+dumb_pca_v<-predict(preProc_dumb,dumb_vars_v)
+
+names(dumb_pca)<-c("PC1_DUMB","PC2_DUMB","PC3_DUMB","PC4_DUMB")
+names(dumb_pca_t)<-c("PC1_DUMB","PC2_DUMB","PC3_DUMB","PC4_DUMB")
+names(dumb_pca_v)<-c("PC1_DUMB","PC2_DUMB","PC3_DUMB","PC4_DUMB")
+
+train_final<-cbind(belt_pca,fore_pca,arm_pca,dumb_pca)
+test_final<-cbind(belt_pca_t,fore_pca_t,arm_pca_t,dumb_pca_t)
+val_final<-cbind(belt_pca_v,fore_pca_v,arm_pca_v,dumb_pca_v)
+
+```
+
+
+```{r, message=FALSE,include=FALSE}
+rm(belt_pca,fore_pca,arm_pca,dumb_pca,belt_pca_t,fore_pca_t,arm_pca_t,dumb_pca_t,training,testing,
+   belt_pca_v,fore_pca_v,arm_pca_v,dumb_pca_v)
+```
+
+
+#Modeling
+
+Random forest is one of the most accurate algorithms to predict, they are based on the following steps:
+
+1. Bootstrap sample on the training dataset (rows),
+2. At each split bootstrap over predictor variables,
+3. Multiple CARTs and vote.
+
+For more details, the [Elements of Statistical Learning](https://web.stanford.edu/~hastie/ElemStatLearn/) book is a highly recommended reference.
+
+##Fitting
+```{r,warning=FALSE}
+set.seed(27)
+modelfit_rf<-caret::train(Classe ~., method="rf", data=train_final, trControl=trainControl(method='cv'), number=5, allowParallel=TRUE, importance=TRUE )
+```
+Recall on *k*-folds:
+
+* Larger *k* = less bais, more variance,
+* Smaller *k* =more bais, less variance.
+
+Here we have chosen *k*=5, that for me it's kind of rule of thumb. 
+
+##Validation
+
+###Overall Statistics: Train
+```{r,warning=FALSE}
+confusionMatrix(train_final$Classe, predict(modelfit_rf, train_final))[3]
+
+```
+###Overall Statistics: Test
+```{r,warning=FALSE}
+confusionMatrix(test_final$Classe, predict(modelfit_rf, test_final))[3]
+```
+
+###Confusion Matrix: Test Set
+```{r,warning=FALSE}
+pred_test_rf <- predict(modelfit_rf, test_final)
+test_final<-cbind(test_final,pred_test_rf)
+
+confusion_rf<-test_final%>%
+  group_by(Classe,pred_test_rf)%>%
+  summarise(count=n())
+
+confusion_rf<-dcast(confusion_rf,Classe~pred_test_rf,sum)
+head(confusion_rf)
+
+highchart() %>% 
+  hc_add_theme(hc_theme_gridlight()) %>% 
+  hc_xAxis(categories = confusion_rf$Classe,
+           title = list(text = "Real Values")) %>% 
+  hc_yAxis(title = list(text = "Num. Predictions")) %>% 
+  hc_add_series(data = confusion_rf$A, name = "Predicted A",
+               type = "column", color = "#32CD32") %>% 
+  hc_add_series(data = confusion_rf$B, name = "Predicted B",
+               type = "column", color = "#9BCD9B") %>%
+  hc_add_series(data = confusion_rf$C, name = "Predicted C",
+               type = "column", color = "#C1FFC1") %>%
+  hc_add_series(data = confusion_rf$D, name = "Predicted D",
+               type = "column", color = "#C1CDC1") %>%
+  hc_add_series(data = confusion_rf$E, name = "Predicted E",
+               type = "column", color = "#838B83") %>%
+  hc_title(text = "Confusion Matrix RF Testing Set")%>%hc_chart(zoomType = "xy") 
+```
+
+
+###Validation predictions
+
+```{r,warning=FALSE}
+pred_val_rf<-predict(modelfit_rf, val_final)
+val_final<-cbind(val_final,pred_val_rf)
+
+```
+
+
